@@ -3,18 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { attestationSchema } from "@/lib/validation";
-import { buildDelegatedAttestTypedData } from "@/lib/eas";
-import { useAccount, usePublicClient, useSignTypedData } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import { env } from "@/lib/env";
-import { SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
+import { EAS, SchemaEncoder, ZERO_BYTES32, NO_EXPIRATION } from "@ethereum-attestation-service/eas-sdk";
 import { EAS_GET_NONCE_ABI } from "@/lib/eas";
+import { ethers } from "ethers";
 
 const formSchema = attestationSchema;
 
 export function AttestationForm() {
   const { address, isConnected } = useAccount();
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<null | { txHash?: string; error?: string }>(null);
+  const [result, setResult] = useState<null | { txHash?: string; uid?: string; error?: string }>(null);
   const [errors, setErrors] = useState<string | null>(null);
 
   const [values, setValues] = useState({
@@ -26,7 +26,6 @@ export function AttestationForm() {
     deadline: Math.floor(Date.now() / 1000) + 60 * 10
   });
 
-  const { signTypedDataAsync } = useSignTypedData();
   const publicClient = usePublicClient();
 
   const canSubmit = useMemo(() => isConnected && !!values.recipient && !!values.schemaUid, [isConnected, values]);
@@ -88,53 +87,68 @@ export function AttestationForm() {
     }
     try {
       setSubmitting(true);
-      // Fetch EAS expected nonce for attester
-      let chainNonce = 0n;
-      if (publicClient && address) {
-        try {
-          chainNonce = (await publicClient.readContract({
-            address: env.easAddress as `0x${string}`,
-            abi: EAS_GET_NONCE_ABI as any,
-            functionName: "getNonce",
-            args: [address]
-          })) as unknown as bigint;
-        } catch {}
-      }
+      // Build EAS SDK objects from wallet (ethers provider)
+      if (!window.ethereum) throw new Error("No injected wallet available");
+      // BrowserProvider does not accept an options object; passing { staticNetwork: true }
+      // as the second param triggers "invalid network object name or chainId".
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const attesterAddr = await signer.getAddress();
 
-      const typedData = buildDelegatedAttestTypedData({
-        schemaUid: parsed.data.schemaUid as `0x${string}`,
+      const eas = new EAS(env.easAddress);
+      eas.connect(signer as any);
+
+      // Ensure on-chain nonce matches what we sign with
+      const chainNonce = await eas.getNonce(attesterAddr);
+
+      // Encode data for schema: string user (already computed in values.dataHex, but re-derive to be safe)
+      const encoder = new SchemaEncoder("string user");
+      const userStr = parsed.data.user ?? values.user;
+      const dataHex = encoder.encodeData([{ name: "user", type: "string", value: userStr }]);
+
+      // Compute a safe future deadline (>= now + 10 min)
+      const nowSec = Math.floor(Date.now() / 1000);
+      const desired = parsed.data.deadline || 0;
+      const safeDeadlineSec = Math.max(desired, nowSec + 10 * 60);
+
+      // Sign delegated attestation via SDK
+      const delegated = await (await eas.getDelegated()).signDelegatedAttestation({
+        schema: parsed.data.schemaUid as `0x${string}`,
         recipient: parsed.data.recipient as `0x${string}`,
-        dataHex: parsed.data.dataHex as `0x${string}`,
-        deadline: parsed.data.deadline,
-        nonce: Number(chainNonce ?? 0)
-      });
+        expirationTime: NO_EXPIRATION as unknown as bigint,
+        revocable: true,
+        refUID: ZERO_BYTES32 as `0x${string}`,
+        data: dataHex as `0x${string}`,
+        value: 0n,
+        deadline: BigInt(safeDeadlineSec),
+        nonce: chainNonce,
+      }, signer as any);
 
-      const signature = await signTypedDataAsync({
-        domain: typedData.domain as any,
-        types: typedData.types as any,
-        primaryType: typedData.primaryType as any,
-        message: typedData.message as any
-      });
+      // Build a plain JSON-friendly payload that explicitly carries deadline/nonce as numbers/strings
+      const delegatedPayload = {
+        ...delegated,
+        message: {
+          ...delegated.message,
+          deadline: BigInt(safeDeadlineSec),
+          nonce: chainNonce,
+        },
+      } as any;
 
       const payload = {
-        schemaUid: parsed.data.schemaUid,
-        recipient: parsed.data.recipient,
-        dataHex: parsed.data.dataHex,
-        attester: address,
-        nonce: Number(chainNonce ?? 0),
-        deadline: parsed.data.deadline,
-        typedData,
-        signature
+        attester: attesterAddr as `0x${string}`,
+        delegatedAttestation: delegatedPayload,
       };
 
       const res = await fetch("/api/relay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        // JSON.stringify cannot serialize BigInt. Convert all bigint values to strings.
+        body: JSON.stringify(payload, (_k, v) => (typeof v === "bigint" ? v.toString() : v))
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Relay failed (${res.status})`);
-      setResult({ txHash: json.txHash });
+      // Worker returns { uid }; edge function returned { txHash }
+      setResult({ txHash: json.txHash, uid: json.uid });
     } catch (err: any) {
       setResult({ error: err?.message || String(err) });
     } finally {

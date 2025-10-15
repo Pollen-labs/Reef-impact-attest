@@ -42,7 +42,7 @@ export function buildDelegatedAttestTypedData(input: DelegatedAttestationInput) 
       { name: "schema", type: "bytes32" },
       { name: "data", type: "AttestationRequestData" },
       { name: "nonce", type: "uint256" },
-      { name: "deadline", type: "uint64" }
+      { name: "deadline", type: "uint256" }
     ],
     AttestationRequestData: [
       { name: "recipient", type: "address" },
