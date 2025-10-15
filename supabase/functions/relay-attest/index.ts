@@ -20,6 +20,7 @@ const RELAYER_PRIVATE_KEY = Deno.env.get("RELAYER_PRIVATE_KEY") || "";
 const RPC_URL = Deno.env.get("RPC_URL") || "";
 const EAS_ADDRESS = (Deno.env.get("EAS_ADDRESS") || "") as `0x${string}`;
 const CHAIN_ID = Number(Deno.env.get("CHAIN_ID") || "0");
+const EAS_DOMAIN_VERSION = Deno.env.get("EAS_DOMAIN_VERSION") || "0.26";
 const ALLOWED_SCHEMA_UIDS = (Deno.env.get("ALLOWED_SCHEMA_UIDS") || "")
   .split(",")
   .map((s) => s.trim())
@@ -195,7 +196,7 @@ serve(async (req) => {
     const dataMsg = (msg?.data || {}) as any;
     const canonicalDomain = {
       name: "EAS",
-      version: "1.0.0",
+      version: EAS_DOMAIN_VERSION,
       chainId: CHAIN_ID,
       verifyingContract: EAS_ADDRESS,
     } as const;

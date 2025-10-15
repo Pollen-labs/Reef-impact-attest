@@ -47,6 +47,7 @@ Backend Env (Supabase Function Secrets)
 - RPC_URL: HTTPS RPC endpoint (e.g., Infura/Alchemy) for the target chain
 - EAS_ADDRESS: EAS contract address on your chain (e.g., Sepolia v0.26: 0xC2679f… or Optimism Sepolia: 0x4200…)
 - CHAIN_ID: numeric chain id (e.g., 11155111 for Sepolia)
+- EAS_DOMAIN_VERSION: EIP-712 domain version for this EAS deployment (use "0.26" for Sepolia 0xC2679f…; use "1.0.0" for v1 deployments)
 - ALLOWED_SCHEMA_UIDS: comma-separated list of schema UIDs accepted by the relayer
 - DEFAULT_SCHEMA_UID: optional fallback schema UID used when the client omits/typos the field (dev only)
 - ALLOWED_ORIGINS: comma-separated list of allowed origins for CORS (e.g., http://localhost:3000)
@@ -59,7 +60,8 @@ Deploy Edge Function
 4) Set secrets in Dashboard → Project Settings → Functions → Secrets
 5) Test: `curl -i <function-url>` and then POST a signed payload from the app
 
-Frontend Server Env (Next.js)
+ Frontend Server Env (Next.js)
 - RELAYER_URL: your deployed function URL
 - RELAYER_INVOKE_KEY: Supabase anon key used to authorize function invocation from the Next.js server route
   - Next.js server forwards Authorization and apikey headers so Supabase doesn’t return 401
+ - NEXT_PUBLIC_EAS_VERSION: must match the target EAS deployment domain version. For Sepolia EAS at 0xC2679f… use "0.26". For newer v1 deployments use "1.0.0".
