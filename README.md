@@ -40,3 +40,26 @@ Key Files
 - components/AttestationForm.tsx: zod-validated form, EIP-712 signing, and relay call.
 - lib/eas.ts: Delegated attestation typed data builder.
 - app/api/relay/route.ts: Proxy to `RELAYER_URL`.
+- supabase/functions/relay-attest/index.ts: Supabase Edge Function (Deno) to verify signatures, prevent replay, relay to EAS, and log to DB.
+
+Backend Env (Supabase Function Secrets)
+- RELAYER_PRIVATE_KEY: 0x… private key for relayer wallet (funded on your testnet)
+- RPC_URL: HTTPS RPC endpoint (e.g., Infura/Alchemy) for the target chain
+- EAS_ADDRESS: EAS contract address on your chain (e.g., Sepolia v0.26: 0xC2679f… or Optimism Sepolia: 0x4200…)
+- CHAIN_ID: numeric chain id (e.g., 11155111 for Sepolia)
+- ALLOWED_SCHEMA_UIDS: comma-separated list of schema UIDs accepted by the relayer
+- DEFAULT_SCHEMA_UID: optional fallback schema UID used when the client omits/typos the field (dev only)
+- ALLOWED_ORIGINS: comma-separated list of allowed origins for CORS (e.g., http://localhost:3000)
+- SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY: auto-injected by Supabase Functions (verify present)
+
+Deploy Edge Function
+1) Install Supabase CLI and login: `supabase login`
+2) Link project: `supabase link --project-ref <your-ref>`
+3) Deploy: `supabase functions deploy relay-attest`
+4) Set secrets in Dashboard → Project Settings → Functions → Secrets
+5) Test: `curl -i <function-url>` and then POST a signed payload from the app
+
+Frontend Server Env (Next.js)
+- RELAYER_URL: your deployed function URL
+- RELAYER_INVOKE_KEY: Supabase anon key used to authorize function invocation from the Next.js server route
+  - Next.js server forwards Authorization and apikey headers so Supabase doesn’t return 401

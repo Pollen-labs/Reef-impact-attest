@@ -19,19 +19,19 @@ export function buildDelegatedAttestTypedData(input: DelegatedAttestationInput) 
   const message = {
     schema: input.schemaUid,
     recipient: input.recipient,
-    expirationTime: BigInt(input.expirationTime ?? 0),
+    expirationTime: Number(input.expirationTime ?? 0),
     revocable: input.revocable ?? true,
     refUID: (input.refUID ??
       ("0x" + "0".repeat(64)) as `0x${string}`) as `0x${string}`,
     data: input.dataHex,
-    value: BigInt(input.value ?? 0),
-    deadline: BigInt(input.deadline),
-    nonce: BigInt(input.nonce as any)
+    value: Number(input.value ?? 0),
+    deadline: Number(input.deadline),
+    nonce: Number(input.nonce as any)
   } as const;
 
   const domain = {
     name: "EAS",
-    version: "1.0",
+    version: env.easVersion || "0.26",
     chainId,
     verifyingContract
   } as const;
@@ -58,3 +58,13 @@ export function buildDelegatedAttestTypedData(input: DelegatedAttestationInput) 
   };
 }
 
+// Minimal ABI fragment for EAS.getNonce(address)
+export const EAS_GET_NONCE_ABI = [
+  {
+    inputs: [{ name: "account", type: "address" }],
+    name: "getNonce",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function"
+  }
+];

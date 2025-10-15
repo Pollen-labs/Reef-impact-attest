@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.45.0",
+    "viem": "npm:viem@2.18.8",
+    "viem/accounts": "npm:viem@2.18.8/accounts"
+  }
+}

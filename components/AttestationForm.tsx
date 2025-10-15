@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { attestationSchema } from "@/lib/validation";
 import { buildDelegatedAttestTypedData } from "@/lib/eas";
-import { useAccount, useSignTypedData } from "wagmi";
+import { useAccount, usePublicClient, useSignTypedData } from "wagmi";
 import { env } from "@/lib/env";
+import { SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
+import { EAS_GET_NONCE_ABI } from "@/lib/eas";
 
 const formSchema = attestationSchema;
 
@@ -16,34 +18,72 @@ export function AttestationForm() {
   const [errors, setErrors] = useState<string | null>(null);
 
   const [values, setValues] = useState({
-    schemaUid: env.defaultSchemaUid,
+    schemaUid: env.defaultSchemaUid || "0x001e1e0d831d5ddf74723ac311f51e65dbdccec850e0f1fcf9ee41e6461e2d4d",
     recipient: "",
     dataHex: "0x",
+    user: "",
     nonce: String(Date.now()),
     deadline: Math.floor(Date.now() / 1000) + 60 * 10
   });
 
   const { signTypedDataAsync } = useSignTypedData();
+  const publicClient = usePublicClient();
 
   const canSubmit = useMemo(() => isConnected && !!values.recipient && !!values.schemaUid, [isConnected, values]);
+
+  // Auto-encode data for schema: "string user"
+  useEffect(() => {
+    try {
+      const encoder = new SchemaEncoder("string user");
+      const encoded = encoder.encodeData([
+        { name: "user", type: "string", value: values.user }
+      ]);
+      setValues((s) => ({ ...s, dataHex: encoded }));
+    } catch (e) {
+      // keep previous dataHex on failure
+    }
+  }, [values.user]);
+
+  // Prefill recipient with connected address if empty
+  useEffect(() => {
+    if (address && !values.recipient) {
+      setValues((s) => ({ ...s, recipient: address }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrors(null);
     setResult(null);
-    const parsed = formSchema.safeParse(values);
+    // Ensure recipient defaults to connected address if missing
+    const candidate = { ...values, recipient: values.recipient || (address ?? "") };
+    const parsed = formSchema.safeParse(candidate);
     if (!parsed.success) {
       setErrors(parsed.error.issues.map((i) => i.message).join("; "));
       return;
     }
     try {
       setSubmitting(true);
+      // Fetch EAS expected nonce for attester
+      let chainNonce = 0n;
+      if (publicClient && address) {
+        try {
+          chainNonce = (await publicClient.readContract({
+            address: env.easAddress as `0x${string}`,
+            abi: EAS_GET_NONCE_ABI as any,
+            functionName: "getNonce",
+            args: [address]
+          })) as unknown as bigint;
+        } catch {}
+      }
+
       const typedData = buildDelegatedAttestTypedData({
         schemaUid: parsed.data.schemaUid as `0x${string}`,
         recipient: parsed.data.recipient as `0x${string}`,
         dataHex: parsed.data.dataHex as `0x${string}`,
         deadline: parsed.data.deadline,
-        nonce: parsed.data.nonce
+        nonce: Number(chainNonce ?? 0)
       });
 
       const signature = await signTypedDataAsync({
@@ -106,15 +146,20 @@ export function AttestationForm() {
         />
       </label>
       <label>
-        Data (hex)
+        user (string)
         <input
-          value={values.dataHex}
-          onChange={(e) => update("dataHex", e.target.value)}
-          placeholder="0x…"
-          required
+          value={values.user}
+          onChange={(e) => update("user", e.target.value)}
+          placeholder="your name or id"
           style={{ width: "100%" }}
         />
       </label>
+      <div>
+        Encoded data (auto):
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#f6f6f6", padding: 8 }}>
+          {values.dataHex}
+        </pre>
+      </div>
       <label>
         Nonce
         <input value={values.nonce} onChange={(e) => update("nonce", e.target.value)} style={{ width: "100%" }} />
@@ -150,4 +195,3 @@ export function AttestationForm() {
     </form>
   );
 }
-

@@ -1,16 +1,19 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useConnectors } from "wagmi";
 import { injected } from "wagmi";
 
 export function WalletConnect() {
   const { address, isConnected } = useAccount();
+  const [mounted, setMounted] = useState(false);
   const { connect, isPending, error: connectError } = useConnect();
   const connectors = useConnectors();
   const { disconnect } = useDisconnect();
 
-  if (isConnected) {
+  useEffect(() => setMounted(true), []);
+
+  if (mounted && isConnected) {
     return (
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <span>Connected: {address}</span>
