@@ -228,6 +228,20 @@ export function AttestationForm() {
           </div>
         </div>
       )}
+      {result?.uid && (
+        <div>
+          Attestation UID: {result.uid}
+          <div>
+            <a
+              href={`https://sepolia.easscan.org/attestation/view/${result.uid}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View Attestation
+            </a>
+          </div>
+        </div>
+      )}
       {result?.error && <div style={{ color: "#b00" }}>{result.error}</div>}
     </form>
   );
