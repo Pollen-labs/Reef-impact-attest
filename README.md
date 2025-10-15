@@ -30,7 +30,7 @@ Getting Started
    - Ensure env secrets are set: `RELAYER_PRIVATE_KEY`, `RPC_URL`, `EAS_ADDRESS`, `ALLOWED_SCHEMA_UIDS`, `CHAIN_ID`.
 
 Important Notes
-- This scaffold uses a generic EAS delegated Attest typed data layout (EIP-712 domain { name: "EAS", version: "1.0" }). Validate fields against your target EAS version and schema.
+- This scaffold uses the official EAS delegated Attest EIP-712 layout with nested `AttestationRequestData` and domain { name: "EAS", version: "1.0.0" }. Validate fields against your target EAS deployment.
 - `dataHex` must be schema-encoded bytes. Use the EAS SDK SchemaEncoder when wiring full schema support.
 - The API route is a simple proxy to avoid CORS and keep the service role key out of the client.
 

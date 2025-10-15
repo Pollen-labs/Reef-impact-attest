@@ -18,20 +18,21 @@ export function buildDelegatedAttestTypedData(input: DelegatedAttestationInput) 
 
   const message = {
     schema: input.schemaUid,
-    recipient: input.recipient,
-    expirationTime: Number(input.expirationTime ?? 0),
-    revocable: input.revocable ?? true,
-    refUID: (input.refUID ??
-      ("0x" + "0".repeat(64)) as `0x${string}`) as `0x${string}`,
-    data: input.dataHex,
-    value: Number(input.value ?? 0),
-    deadline: Number(input.deadline),
-    nonce: Number(input.nonce as any)
+    data: {
+      recipient: input.recipient,
+      expirationTime: Number(input.expirationTime ?? 0),
+      revocable: input.revocable ?? true,
+      refUID: (input.refUID ?? ("0x" + "0".repeat(64)) as `0x${string}`) as `0x${string}`,
+      data: input.dataHex,
+      value: Number(input.value ?? 0)
+    },
+    nonce: Number(input.nonce as any),
+    deadline: Number(input.deadline)
   } as const;
 
   const domain = {
     name: "EAS",
-    version: env.easVersion || "0.26",
+    version: env.easVersion || "1.0.0",
     chainId,
     verifyingContract
   } as const;
@@ -39,14 +40,17 @@ export function buildDelegatedAttestTypedData(input: DelegatedAttestationInput) 
   const types = {
     Attest: [
       { name: "schema", type: "bytes32" },
+      { name: "data", type: "AttestationRequestData" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint64" }
+    ],
+    AttestationRequestData: [
       { name: "recipient", type: "address" },
       { name: "expirationTime", type: "uint64" },
       { name: "revocable", type: "bool" },
       { name: "refUID", type: "bytes32" },
       { name: "data", type: "bytes" },
-      { name: "value", type: "uint256" },
-      { name: "deadline", type: "uint64" },
-      { name: "nonce", type: "uint256" }
+      { name: "value", type: "uint256" }
     ]
   } as const;
 

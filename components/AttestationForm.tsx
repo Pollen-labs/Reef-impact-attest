@@ -22,7 +22,7 @@ export function AttestationForm() {
     recipient: "",
     dataHex: "0x",
     user: "",
-    nonce: String(Date.now()),
+    nonce: "",
     deadline: Math.floor(Date.now() / 1000) + 60 * 10
   });
 
@@ -51,6 +51,29 @@ export function AttestationForm() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
+
+  // Fetch and display current chain nonce for attester
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!publicClient || !address) return;
+        const chainNonce = (await publicClient.readContract({
+          address: env.easAddress as `0x${string}`,
+          abi: EAS_GET_NONCE_ABI as any,
+          functionName: "getNonce",
+          args: [address]
+        })) as unknown as bigint;
+        if (!cancelled) setValues((s) => ({ ...s, nonce: String(chainNonce) }));
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicClient, address]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,7 +121,7 @@ export function AttestationForm() {
         recipient: parsed.data.recipient,
         dataHex: parsed.data.dataHex,
         attester: address,
-        nonce: parsed.data.nonce,
+        nonce: Number(chainNonce ?? 0),
         deadline: parsed.data.deadline,
         typedData,
         signature
@@ -161,8 +184,8 @@ export function AttestationForm() {
         </pre>
       </div>
       <label>
-        Nonce
-        <input value={values.nonce} onChange={(e) => update("nonce", e.target.value)} style={{ width: "100%" }} />
+        Nonce (auto from chain)
+        <input value={values.nonce} readOnly style={{ width: "100%", background: "#f6f6f6" }} />
       </label>
       <label>
         Deadline (unix seconds)

@@ -48,9 +48,9 @@ function json(data: unknown, init: ResponseInit & { origin?: string | null } = {
   return new Response(JSON.stringify(data), { ...rest, headers });
 }
 
-// Minimal EAS ABI for attestByDelegation
+// Minimal EAS ABI for attestByDelegation (includes deadline within signature struct)
 const EAS_ABI = parseAbi([
-  "function attestByDelegation((bytes32 schema,(address recipient,uint64 expirationTime,bool revocable,bytes32 refUID,bytes data,uint256 value) data,(uint8 v,bytes32 r,bytes32 s) signature,address attester) delegatedRequest) payable returns (bytes32)",
+  "function attestByDelegation((bytes32 schema,(address recipient,uint64 expirationTime,bool revocable,bytes32 refUID,bytes data,uint256 value) data,(uint8 v,bytes32 r,bytes32 s,uint64 deadline) signature,address attester) delegatedRequest) payable returns (bytes32)",
 ]);
 
 const chain = defineChain({
@@ -173,29 +173,85 @@ serve(async (req) => {
     // Guard: deadline not expired
     if (deadline <= nowSec()) throw new Error("Signature deadline expired");
 
-    // Verify signature recovers attester
+    // Verify signature against canonical EAS types (do not trust client-provided types)
+    const canonicalTypes = {
+      Attest: [
+        { name: "schema", type: "bytes32" },
+        { name: "data", type: "AttestationRequestData" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint64" },
+      ],
+      AttestationRequestData: [
+        { name: "recipient", type: "address" },
+        { name: "expirationTime", type: "uint64" },
+        { name: "revocable", type: "bool" },
+        { name: "refUID", type: "bytes32" },
+        { name: "data", type: "bytes" },
+        { name: "value", type: "uint256" },
+      ],
+    } as const;
+
+    const msg = typedData.message as any;
+    const dataMsg = (msg?.data || {}) as any;
+    const canonicalDomain = {
+      name: "EAS",
+      version: "1.0.0",
+      chainId: CHAIN_ID,
+      verifyingContract: EAS_ADDRESS,
+    } as const;
+    const canonicalMessage = {
+      schema: schemaUid,
+      data: {
+        recipient,
+        expirationTime: Number(dataMsg.expirationTime ?? 0),
+        revocable: Boolean(dataMsg.revocable ?? true),
+        refUID: (dataMsg.refUID || `0x${"0".repeat(64)}`) as `0x${string}`,
+        data: dataHex,
+        value: Number(dataMsg.value ?? 0),
+      },
+      nonce: Number((msg?.nonce ?? 0) as number),
+      deadline: Number((msg?.deadline ?? deadline) as number),
+    } as const;
+
     const verified = await verifyTypedData({
       address: getAddress(attester),
-      domain: typedData.domain,
-      types: typedData.types as any,
-      primaryType: typedData.primaryType as any,
-      message: typedData.message,
+      domain: canonicalDomain as any,
+      types: canonicalTypes as any,
+      primaryType: "Attest",
+      message: canonicalMessage as any,
       signature,
     });
     if (!verified) throw new Error("Invalid signature");
+
+    // Ensure DB tracks the exact nonce used in the signed typedData
+    const signedNonce = String((typedData?.message as any)?.nonce ?? nonce);
 
     // Prevent replay at API layer by inserting nonce row (unique constraint)
     const nonceInsert = await supabase.from("nonces").insert({
       attester: attester.toLowerCase(),
       schema_uid: schemaUid,
-      nonce: String(nonce),
+      nonce: signedNonce,
       consumed: false,
     });
     if (nonceInsert.error) {
       if (nonceInsert.error.code === "23505") {
-        return json({ error: "Nonce already used" }, { status: 409, origin });
+        // A row already exists for this (attester, schema_uid, nonce).
+        // Allow retry if it has not been marked consumed yet (previous attempt failed before on-chain success).
+        const existing = await supabase
+          .from("nonces")
+          .select("consumed")
+          .eq("attester", attester.toLowerCase())
+          .eq("schema_uid", schemaUid)
+          .eq("nonce", signedNonce)
+          .maybeSingle();
+        if (existing.data && existing.data.consumed === false) {
+          // proceed; do not block retries
+        } else {
+          return json({ error: "Nonce already used" }, { status: 409, origin });
+        }
+      } else {
+        throw nonceInsert.error;
       }
-      throw nonceInsert.error;
     }
 
     // Create attestation log (pending)
@@ -213,8 +269,7 @@ serve(async (req) => {
       .single();
     if (attIns.error) throw attIns.error;
 
-    // Build delegated request args for EAS
-    const msg = typedData.message as any;
+    // Build delegated request args for EAS (reuse msg/dataMsg from verification)
     const { r, s, v } = splitSignature(signature);
 
     // Send transaction
@@ -227,21 +282,26 @@ serve(async (req) => {
           schema: schemaUid,
           data: {
             recipient,
-            expirationTime: BigInt(msg.expirationTime ?? 0),
-            revocable: Boolean(msg.revocable ?? true),
-            refUID: (msg.refUID || `0x${"0".repeat(64)}`) as `0x${string}`,
+            expirationTime: BigInt(dataMsg.expirationTime ?? 0),
+            revocable: Boolean(dataMsg.revocable ?? true),
+            refUID: (dataMsg.refUID || `0x${"0".repeat(64)}`) as `0x${string}`,
             data: dataHex,
-            value: BigInt(msg.value ?? 0n),
+            value: BigInt(dataMsg.value ?? 0n),
           },
-          signature: { v, r, s },
+          signature: { v, r, s, deadline: BigInt((msg?.deadline ?? deadline) as number) },
           attester,
         },
       ],
-      value: BigInt(msg.value ?? 0n),
+      value: BigInt(dataMsg.value ?? 0n),
     });
 
     // Update DB: success
-    await supabase.from("nonces").update({ consumed: true }).eq("attester", attester.toLowerCase()).eq("schema_uid", schemaUid).eq("nonce", String(nonce));
+    await supabase
+      .from("nonces")
+      .update({ consumed: true })
+      .eq("attester", attester.toLowerCase())
+      .eq("schema_uid", schemaUid)
+      .eq("nonce", signedNonce);
     await supabase
       .from("attestations")
       .update({ status: "success", tx_hash: hash })
