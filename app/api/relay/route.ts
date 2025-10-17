@@ -37,5 +37,14 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, relay: Boolean(env.relayerUrl) });
+  if (!env.relayerUrl) {
+    return NextResponse.json({ ok: false, error: "RELAYER_URL not set" }, { status: 500 });
+  }
+  try {
+    const res = await fetch(env.relayerUrl, { method: "GET" });
+    const json = await res.json().catch(() => ({}));
+    return NextResponse.json({ ok: true, relayerUrl: env.relayerUrl, worker: json }, { status: res.status });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, relayerUrl: env.relayerUrl, error: e?.message || String(e) }, { status: 500 });
+  }
 }

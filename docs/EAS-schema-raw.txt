@@ -1,0 +1,25 @@
+Coral Action Attestation — EAS Schema (raw)
+
+POC schema (already used in app):
+string user
+
+MVP schema v1 
+# Recipient is always provided separately when calling attest/attestByDelegation
+
+string regenType,
+string[] regenLocation,
+string regenDate,        # e.g. "MM-DD-YYYY" (human-readable)
+uint256 depthScaled,       # meters x100 (e.g., 3.50m → 350)
+uint256 surfaceAreaScaled, # m^2 x100 (e.g., 12.34 → 1234)
+string[] species,          # multiple selections
+string summary,
+string[] contributors      # multiple contributors
+
+deploy on: https://optimism-sepolia.easscan.org/schema/view/0xa3950a0da6321874b64dc329abff0119970bd34ffe9d2c1ed43446fd8ee7dd46
+
+Rationale and notes
+- Arrays: species, contributors, and regenLocation are arrays (EAS supports primitive arrays like string[]).
+- Location: regenLocation is [lat, lng] as strings for simplicity (e.g., ["25.0343","-77.3963"]).
+- Date: stored as a human-readable string as requested. Consider ISO (YYYY-MM-DD) to avoid locale ambiguity.
+- Numeric fields: EAS does not support decimals. Use scaled integers for depth and surface area (x100) so you keep two decimals.
+- Recipient: not part of schema; passed in the attestation params separately.

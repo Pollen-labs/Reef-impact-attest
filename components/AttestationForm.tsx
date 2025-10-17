@@ -36,10 +36,8 @@ export function AttestationForm() {
     contributorsCsv: "",
 
     // EAS fields
-    schemaUid: env.defaultSchemaUid || "0x001e1e0d831d5ddf74723ac311f51e65dbdccec850e0f1fcf9ee41e6461e2d4d",
+    schemaUid: env.defaultSchemaUid || "",
     recipient: "",
-    dataHex: "0x",
-    user: "",
     nonce: "",
     deadline: Math.floor(Date.now() / 1000) + 60 * 10
   });
@@ -51,18 +49,33 @@ export function AttestationForm() {
     return isConnected && !!values.recipient && !!values.schemaUid;
   }, [isConnected, values.recipient, values.schemaUid]);
 
-  // Auto-encode data for schema: "string user"
-  useEffect(() => {
+  // Build EAS encoded data for the deployed MVP schema
+  const schemaString = "string regenType,string[] regenLocation,string regenDate,uint256 depthScaled,uint256 surfaceAreaScaled,string[] species,string summary,string[] contributors";
+  const encodedData = useMemo(() => {
     try {
-      const encoder = new SchemaEncoder("string user");
-      const encoded = encoder.encodeData([
-        { name: "user", type: "string", value: values.user }
+      const encoder = new SchemaEncoder(schemaString);
+      const dateStr = values.actionDate
+        ? (() => { const [y,m,d] = values.actionDate.split("-"); return `${m}-${d}-${y}`; })()
+        : "";
+      const depthScaled = values.depth === "" ? 0n : BigInt(Math.round(Number(values.depth) * 100));
+      const areaScaled = values.surfaceArea === "" ? 0n : BigInt(Math.round(Number(values.surfaceArea) * 100));
+      const species = values.speciesCsv.split(",").map(s => s.trim()).filter(Boolean);
+      const contributors = values.contributorsCsv.split(",").map(s => s.trim()).filter(Boolean);
+      const regenLocation = [values.lat, values.lng].filter(v => v !== "");
+      return encoder.encodeData([
+        { name: "regenType", type: "string", value: values.regenType },
+        { name: "regenLocation", type: "string[]", value: regenLocation as any },
+        { name: "regenDate", type: "string", value: dateStr },
+        { name: "depthScaled", type: "uint256", value: depthScaled },
+        { name: "surfaceAreaScaled", type: "uint256", value: areaScaled },
+        { name: "species", type: "string[]", value: species as any },
+        { name: "summary", type: "string", value: values.summary },
+        { name: "contributors", type: "string[]", value: contributors as any },
       ]);
-      setValues((s) => ({ ...s, dataHex: encoded }));
-    } catch (e) {
-      // keep previous dataHex on failure
+    } catch {
+      return "0x";
     }
-  }, [values.user]);
+  }, [values.regenType, values.actionDate, values.lat, values.lng, values.depth, values.surfaceArea, values.speciesCsv, values.summary, values.contributorsCsv]);
 
   // Prefill recipient with connected address if empty
   useEffect(() => {
@@ -122,10 +135,8 @@ export function AttestationForm() {
       // Ensure on-chain nonce matches what we sign with
       const chainNonce = await eas.getNonce(attesterAddr);
 
-      // Encode data for schema: string user (already computed in values.dataHex, but re-derive to be safe)
-      const encoder = new SchemaEncoder("string user");
-      const userStr = parsed.data.user ?? values.user;
-      const dataHex = encoder.encodeData([{ name: "user", type: "string", value: userStr }]);
+      // Encode data for MVP schema based on form fields
+      const dataHex = encodedData;
 
       // Compute a safe future deadline (>= now + 10 min)
       const nowSec = Math.floor(Date.now() / 1000);
@@ -363,19 +374,10 @@ export function AttestationForm() {
           style={{ width: "100%" }}
         />
       </label>
-      <label>
-        user (string)
-        <input
-          value={values.user}
-          onChange={(e) => update("user", e.target.value)}
-          placeholder="your name or id"
-          style={{ width: "100%" }}
-        />
-      </label>
       <div>
         Encoded data (auto):
         <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#f6f6f6", padding: 8 }}>
-          {values.dataHex}
+          {encodedData}
         </pre>
       </div>
       <label>
