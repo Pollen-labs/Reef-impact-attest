@@ -66,3 +66,4 @@ Deploy Edge Function
   - Next.js server forwards Authorization and apikey headers so Supabase doesn’t return 401
  - NEXT_PUBLIC_EAS_VERSION: must match the target EAS deployment domain version. For Sepolia EAS at 0xC2679f… use "0.26". For newer v1 deployments use "1.0.0".
 
+
