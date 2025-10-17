@@ -18,6 +18,24 @@ export function AttestationForm() {
   const [errors, setErrors] = useState<string | null>(null);
 
   const [values, setValues] = useState({
+    // DB fields
+    regenType: "other" as "transplantation" | "nursery" | "other",
+    actionDate: (() => {
+      const d = new Date();
+      const yyyy = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(d.getUTCDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    })(),
+    lat: "",
+    lng: "",
+    depth: "",
+    surfaceArea: "",
+    speciesCsv: "",
+    summary: "",
+    contributorsCsv: "",
+
+    // EAS fields
     schemaUid: env.defaultSchemaUid || "0x001e1e0d831d5ddf74723ac311f51e65dbdccec850e0f1fcf9ee41e6461e2d4d",
     recipient: "",
     dataHex: "0x",
@@ -28,7 +46,10 @@ export function AttestationForm() {
 
   const publicClient = usePublicClient();
 
-  const canSubmit = useMemo(() => isConnected && !!values.recipient && !!values.schemaUid, [isConnected, values]);
+  const canSubmit = useMemo(() => {
+    // Allow sign & relay even if attestation details are empty (optional DB fields)
+    return isConnected && !!values.recipient && !!values.schemaUid;
+  }, [isConnected, values.recipient, values.schemaUid]);
 
   // Auto-encode data for schema: "string user"
   useEffect(() => {
@@ -111,6 +132,57 @@ export function AttestationForm() {
       const desired = parsed.data.deadline || 0;
       const safeDeadlineSec = Math.max(desired, nowSec + 10 * 60);
 
+      // Upsert profile + create a draft attestation only if DB fields are valid (optional)
+      let profileId: string | null = null;
+      let attestationId: string | null = null;
+      try {
+        const latNum = Number(values.lat);
+        const lngNum = Number(values.lng);
+        const coordsOk = !Number.isNaN(latNum) && !Number.isNaN(lngNum) && values.lat !== "" && values.lng !== "";
+        const hasDb = Boolean(values.actionDate && coordsOk);
+        if (hasDb) {
+          const up = await fetch("/api/profiles/upsert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wallet_address: attesterAddr })
+          });
+          const upJson = await up.json();
+          if (up.ok && upJson.profileId) profileId = upJson.profileId as string;
+          if (profileId) {
+            const depthNum = values.depth === "" ? null : Number(values.depth);
+            const areaNum = values.surfaceArea === "" ? null : Number(values.surfaceArea);
+            const species = values.speciesCsv
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            const contributor_name = values.contributorsCsv
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            const crt = await fetch("/api/attestations/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                profile_id: profileId,
+                regen_type: values.regenType,
+                action_date: values.actionDate,
+                location_lat: latNum,
+                location_lng: lngNum,
+                depth: depthNum,
+                surface_area: areaNum,
+                species,
+                summary: values.summary || null,
+                contributor_name,
+              })
+            });
+            const crtJson = await crt.json();
+            if (crt.ok && crtJson.attestationId) attestationId = crtJson.attestationId as string;
+          }
+        }
+      } catch {
+        // Non-fatal: continue relay even if DB draft fails
+      }
+
       // Sign delegated attestation via SDK
       const delegated = await (await eas.getDelegated()).signDelegatedAttestation({
         schema: parsed.data.schemaUid as `0x${string}`,
@@ -149,6 +221,17 @@ export function AttestationForm() {
       if (!res.ok) throw new Error(json.error || `Relay failed (${res.status})`);
       // Worker returns { uid }; edge function returned { txHash }
       setResult({ txHash: json.txHash, uid: json.uid });
+
+      // If we created a draft, store UID now
+      if (attestationId && json.uid) {
+        try {
+          await fetch("/api/attestations/set-uid", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attestation_id: attestationId, uid: json.uid })
+          });
+        } catch {}
+      }
     } catch (err: any) {
       setResult({ error: err?.message || String(err) });
     } finally {
@@ -161,7 +244,105 @@ export function AttestationForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+    <form onSubmit={onSubmit} style={{ display: "grid", gap: 16 }}>
+      <fieldset style={{ border: "1px solid #ddd", padding: 12 }}>
+        <legend>Attestation Details (DB)</legend>
+        <label>
+          Regeneration Type
+          <select value={values.regenType} onChange={(e) => update("regenType", e.target.value)} style={{ width: "100%" }}>
+            <option value="transplantation">transplantation</option>
+            <option value="nursery">nursery</option>
+            <option value="other">other</option>
+          </select>
+        </label>
+        <label>
+          Action Date
+          <input
+            type="date"
+            value={values.actionDate}
+            onChange={(e) => update("actionDate", e.target.value)}
+            required
+            style={{ width: "100%" }}
+          />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label>
+            Latitude
+            <input
+              inputMode="decimal"
+              value={values.lat}
+              onChange={(e) => update("lat", e.target.value)}
+              placeholder="e.g. 25.0343"
+              required
+              style={{ width: "100%" }}
+            />
+          </label>
+          <label>
+            Longitude
+            <input
+              inputMode="decimal"
+              value={values.lng}
+              onChange={(e) => update("lng", e.target.value)}
+              placeholder="e.g. -77.3963"
+              required
+              style={{ width: "100%" }}
+            />
+          </label>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label>
+            Depth (m)
+            <input
+              inputMode="decimal"
+              value={values.depth}
+              onChange={(e) => update("depth", e.target.value)}
+              placeholder="optional"
+              style={{ width: "100%" }}
+            />
+          </label>
+          <label>
+            Surface Area (m²)
+            <input
+              inputMode="decimal"
+              value={values.surfaceArea}
+              onChange={(e) => update("surfaceArea", e.target.value)}
+              placeholder="optional"
+              style={{ width: "100%" }}
+            />
+          </label>
+        </div>
+        <label>
+          Species (comma separated)
+          <input
+            value={values.speciesCsv}
+            onChange={(e) => update("speciesCsv", e.target.value)}
+            placeholder="Elkhorn coral, Brain coral"
+            style={{ width: "100%" }}
+          />
+        </label>
+        <label>
+          Summary
+          <textarea
+            value={values.summary}
+            onChange={(e) => update("summary", e.target.value)}
+            placeholder="Short description"
+            rows={3}
+            style={{ width: "100%" }}
+          />
+        </label>
+        <label>
+          Contributors (comma separated)
+          <input
+            value={values.contributorsCsv}
+            onChange={(e) => update("contributorsCsv", e.target.value)}
+            placeholder="Alice, Bob"
+            style={{ width: "100%" }}
+          />
+        </label>
+      </fieldset>
+
+      <fieldset style={{ border: "1px solid #ddd", padding: 12 }}>
+        <legend>EAS Delegation</legend>
       <label>
         Schema UID
         <input
@@ -210,6 +391,7 @@ export function AttestationForm() {
           style={{ width: "100%" }}
         />
       </label>
+      </fieldset>
       <button type="submit" disabled={!canSubmit || submitting}>
         {submitting ? "Submitting…" : "Sign & Relay"}
       </button>

@@ -21,3 +21,12 @@ Notes
 - Public read is enabled for map and profile pages. If you prefer private-by-default, change SELECT policies accordingly.
 - Attestations.uid is optional during draft; your app can update the row with the EAS UID after the relayer responds.
 
+Frontend wiring (server-side)
+- Set env vars in Reef-impact-attest/.env:
+  - SUPABASE_URL=https://<your-project-ref>.supabase.co
+  - SUPABASE_SERVICE_ROLE_KEY=... (server-only)
+- The app has server routes:
+  - `POST /api/profiles/upsert` { wallet_address }
+  - `POST /api/attestations/create` { profile_id | wallet_address, regen_type, action_date, location_lat, location_lng, ... }
+  - `POST /api/attestations/set-uid` { attestation_id, uid }
+  The AttestationForm creates a minimal draft before relay and sets the UID after success.
