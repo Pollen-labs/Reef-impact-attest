@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { env } from "@/lib/env";
 
 type Feature = {
   type: "Feature";
@@ -34,12 +35,20 @@ export function MapView() {
       }
 
       maplib = maplibregl;
+      const token = env.openMapTilesKey;
       map = new maplibregl.Map({
         container: containerRef.current!,
-        style: "https://demotiles.maplibre.org/style.json",
+        style: "/map/styles/dark_matter.json",
         center: [0, 15],
         zoom: 1.6,
         attributionControl: true,
+        transformRequest: (url: string, type: string) => {
+          if (!token) return { url } as any;
+          const needsKey = url.includes("api.maptiler.com") || url.includes("tilehosting.com");
+          if (!needsKey) return { url } as any;
+          const sep = url.includes("?") ? "&" : "?";
+          return { url: `${url}${sep}key=${token}` } as any;
+        },
       });
       mapRef.current = map;
 
