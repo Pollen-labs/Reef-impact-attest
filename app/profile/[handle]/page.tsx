@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ProfileEditor } from "@/components/ProfileEditor";
 
 export default async function Page({ params }: { params: { handle: string } }) {
   const handle = params.handle;
@@ -17,7 +18,7 @@ export default async function Page({ params }: { params: { handle: string } }) {
 
   const { data: attests } = await supabaseAdmin
     .from("attestations")
-    .select("id, uid, regen_type, action_date, location_lat, location_lng, summary, created_at")
+    .select("id, uid, created_at")
     .eq("profile_id", profile.id)
     .order("created_at", { ascending: false });
 
@@ -33,25 +34,25 @@ export default async function Page({ params }: { params: { handle: string } }) {
         )}
         {profile.description && <p>{profile.description}</p>}
       </div>
+      <ProfileEditor
+        walletAddress={profile.wallet_address}
+        orgName={profile.org_name}
+        website={profile.website}
+        description={profile.description}
+      />
       <section>
-        <h2>Attestations</h2>
+        <h2>Attestation History</h2>
         {!attests?.length && <div>No attestations yet.</div>}
         <ul style={{ padding: 0, listStyle: "none", display: "grid", gap: 8 }}>
           {(attests || []).map((a) => (
             <li key={a.id} style={{ border: "1px solid #eee", padding: 12 }}>
-              <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
-                <span>{a.regen_type} • {a.action_date} • ({a.location_lat},{a.location_lng})</span>
-                {a.uid && (
-                  <a
-                    href={`https://optimism-sepolia.easscan.org/attestation/view/${a.uid}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View on EAS
-                  </a>
-                )}
-              </div>
-              {a.summary && <div>{a.summary}</div>}
+              {a.uid ? (
+                <a href={`https://optimism-sepolia.easscan.org/attestation/view/${a.uid}`} target="_blank" rel="noreferrer">
+                  {a.uid}
+                </a>
+              ) : (
+                <span>UID pending…</span>
+              )}
             </li>
           ))}
         </ul>
@@ -59,4 +60,3 @@ export default async function Page({ params }: { params: { handle: string } }) {
     </div>
   );
 }
-
