@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ResourceType, RequestParameters } from "maplibre-gl";
 import { env } from "@/lib/env";
 
 type Feature = {
@@ -42,12 +43,15 @@ export function MapView() {
         center: [0, 15],
         zoom: 1.6,
         attributionControl: true,
-        transformRequest: (url: string, type: string) => {
-          if (!token) return { url } as any;
+        transformRequest: (url: string, _resourceType?: ResourceType): RequestParameters => {
+          if (!token) return { url };
           const needsKey = url.includes("api.maptiler.com") || url.includes("tilehosting.com");
-          if (!needsKey) return { url } as any;
+          if (!needsKey) return { url };
+          if (url.includes("key=")) {
+            return { url: url.replace(/key=[^&]*/i, `key=${token}`) };
+          }
           const sep = url.includes("?") ? "&" : "?";
-          return { url: `${url}${sep}key=${token}` } as any;
+          return { url: `${url}${sep}key=${token}` };
         },
       });
       mapRef.current = map;
