@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useAccount, useDisconnect } from "wagmi";
 import { useEffect, useState } from "react";
 
 export function Nav() {
   const { address, isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
   const [handle, setHandle] = useState<string | null>(null);
 
   useEffect(() => {
@@ -32,11 +33,18 @@ export function Nav() {
   const profileHref = isConnected ? (handle ? `/profile/${handle}` : "/attest") : "/attest";
 
   return (
-    <nav style={{ display: "flex", gap: 12, padding: "8px 16px", borderBottom: "1px solid #eee" }}>
-      <Link href="/">Home</Link>
-      <Link href="/attest">Attest</Link>
-      <Link href="/map">Map</Link>
-      <Link href={profileHref}>{profileLabel}</Link>
+    <nav style={{ display: "flex", gap: 12, padding: "8px 16px", borderBottom: "1px solid #eee", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, flex: 1 }}>
+        <Link href="/">Home</Link>
+        <Link href="/attest">Attest</Link>
+        <Link href="/map">Map</Link>
+        <Link href={profileHref}>{profileLabel}</Link>
+      </div>
+      {isConnected && (
+        <button onClick={() => disconnect()} style={{ marginLeft: "auto" }}>
+          Logout
+        </button>
+      )}
     </nav>
   );
 }
