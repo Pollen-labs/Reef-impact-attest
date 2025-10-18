@@ -1,8 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ProfileEditor } from "@/components/ProfileEditor";
 
-export default async function Page({ params }: { params: { handle: string } }) {
-  const handle = params.handle;
+export default async function Page({ params }: { params: Promise<{ handle: string }> }) {
+  const { handle } = await params;
   const { data: profile, error: pErr } = await supabaseAdmin
     .from("profiles")
     .select("id, handle, org_name, website, description, wallet_address, created_at")
