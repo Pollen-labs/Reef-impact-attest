@@ -122,10 +122,10 @@ export function AttestationForm() {
     try {
       setSubmitting(true);
       // Build EAS SDK objects from wallet (ethers provider)
-      if (!window.ethereum) throw new Error("No injected wallet available");
+      if (!(window as any).ethereum) throw new Error("No injected wallet available");
       // BrowserProvider does not accept an options object; passing { staticNetwork: true }
       // as the second param triggers "invalid network object name or chainId".
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
       const signer = await provider.getSigner();
       const attesterAddr = await signer.getAddress();
 
